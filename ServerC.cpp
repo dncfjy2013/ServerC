@@ -5,6 +5,10 @@
 #include "Common/Enums/ErrorCode.h"
 #include "Common/Exceptions/ApiException.h"
 #include "Common/Extensions/CharExtensions.h"
+#include "Common/Extensions/DoubleExtensions.h"
+#include "Common/Extensions/FloatExtensions.h"
+#include "Common/Extensions/IntExtensions.h"
+#include "Common/Extensions/StringExtensions.h"
 
 int main()
 {
@@ -17,6 +21,73 @@ int main()
     std::cout << "IsLower: " << CharUtils::IsLowerCase(testChar) << "\n";  // false
     std::cout << "ToLower: " << CharUtils::ToLower(testChar) << "\n";      // 'a'
     std::cout << "IsHex: " << CharUtils::IsHexDigit('G') << "\n";          // false
+
+    double testNum = 3.1415926535;
+
+    std::cout << std::boolalpha;
+    std::cout << "IsInteger: " << DoubleUtils::IsInteger(4.0) << "\n";    // true
+    std::cout << "RoundTo: " << DoubleUtils::RoundTo(testNum, 3) << "\n"; // 3.142
+    std::cout << "Percentage: " << DoubleUtils::ToPercentageString(0.755) << "\n"; // "75.50%"
+
+    try {
+        DoubleUtils::Sqrt(-1.0);
+    }
+    catch (const std::invalid_argument& e) {
+        std::cout << "Error: " << e.what() << "\n"; // 不能對負數求平方根
+    }
+
+    float test = 3.1415926f;
+
+    std::cout << std::boolalpha;
+    std::cout << "IsInteger: " << FloatUtils::IsInteger(4.0f) << "\n";    // true
+    std::cout << "RoundTo: " << FloatUtils::RoundTo(test, 3) << "\n";  // 3.142
+    std::cout << "Percentage: " << FloatUtils::ToPercentageString(0.755f) << "\n"; // "75.50%"
+
+    try {
+        FloatUtils::Sqrt(-1.0f);
+    }
+    catch (const std::invalid_argument& e) {
+        std::cout << "Error: " << e.what() << "\n"; // 不能對負數求平方根
+    }
+
+    std::cout << std::boolalpha;
+
+    // 數值屬性
+    std::cout << "IsEven(42): " << IntUtils::IsEven(42) << "\n";    // true
+    std::cout << "IsPrime(17): " << IntUtils::IsPrime(17) << "\n";  // true
+
+    // 數學運算
+    std::cout << "Factorial(5): " << IntUtils::Factorial(5) << "\n";  // 120
+
+    // 序列生成
+    auto seq = IntUtils::To(5, 3);
+    std::cout << "Sequence 5->3: ";
+    for (int num : seq) std::cout << num << " ";  // 5 4 3
+
+    // 數值轉換
+    std::cout << "\nRoman(1999): " << IntUtils::ToRomanNumeral(1999);  // MCMXCIX
+    std::cout << "\nBinary(-1): " << IntUtils::ToBinary(-1);           // 11111111...（32位全1）
+
+    // 空值檢查
+    std::cout << std::boolalpha;
+    std::cout << "IsNullOrEmpty: " << StringUtils::IsNullOrEmpty("") << "\n";      // true
+
+    // 格式轉換
+    std::cout << "CamelCase: " << StringUtils::ToCamelCase("helloWorld") << "\n";   // helloWorld
+
+    // 安全處理
+    std::cout << "MD5: " << StringUtils::ToMD5("password") << "\n";                 // 5f4dcc3b5aa765d61d8327deb882cf99
+
+    // 驗證方法
+    std::cout << "ValidEmail: " << StringUtils::IsValidEmail("test@example.com") << "\n"; // true
+
+    // 字符串處理
+    std::cout << "RandomString: " << StringUtils::RandomString(10) << "\n";          // 隨機字符串
+
+    // 編碼轉換
+    std::cout << "Base64: " << StringUtils::ToBase64("test") << "\n";                // dGVzdA==
+
+    return 0;
 }
 
 // 运行程序: Ctrl + F5 或调试 >“开始执行(不调试)”菜单
