@@ -9,7 +9,9 @@
 #include "Common/Extensions/FloatExtensions.h"
 #include "Common/Extensions/IntExtensions.h"
 #include "Common/Extensions/StringExtensions.h"
-
+#include "Common/Helpers/DateTimeHelper.h"
+#include "Utils/StateMachine.h"
+enum class MachineState { Idle, Running, Paused };
 int main()
 {
     std::cout << "Hello World!\n" << ErrorCode::AccountLocked;
@@ -86,6 +88,40 @@ int main()
 
     // 編碼轉換
     std::cout << "Base64: " << StringUtils::ToBase64("test") << "\n";                // dGVzdA==
+
+    // 創建測試時間點
+    auto now = std::chrono::system_clock::now();
+    auto nextMonth = DateTimeUtils::AddMonthsSafe(now, 1);
+
+    // 計算月差
+    std::cout << "Months between: "
+        << DateTimeUtils::MonthsBetween(now, nextMonth) << "\n";  // 1
+
+    // 格式化輸出
+    std::cout << "Custom format: "
+        << DateTimeUtils::ToCustomFormat(now, "%Y-%m-%d %H:%M:%S") << "\n";
+
+    // 季度計算
+    auto firstDayOfQuarter = DateTimeUtils::GetFirstDayOfQuarter(now);
+    std::cout << "First day of quarter: "
+        << DateTimeUtils::ToCustomFormat(firstDayOfQuarter, "%Y-%m-%d") << "\n";
+
+    StateMachine<int, MachineState> sm;
+
+    sm.AddTransition(MachineState::Idle, MachineState::Running);
+    sm.AddTransition(MachineState::Running, MachineState::Paused);
+
+    sm.InitializeState(1, MachineState::Idle);
+
+    sm._onBeforeTransition = [](auto key, auto from, auto to) {
+        std::cout << "Transitioning " << key << " from "
+            << static_cast<int>(from) << " to "
+            << static_cast<int>(to) << std::endl;
+        };
+
+    sm.Transition(1, MachineState::Running, [](auto...) {
+        // 执行实际转换操作
+        });
 
     return 0;
 }
