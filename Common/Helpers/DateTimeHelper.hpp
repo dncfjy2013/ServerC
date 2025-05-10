@@ -12,10 +12,21 @@ namespace DateTimeUtils {
     /// @param tp 输入的system_clock时间点
     /// @return 转换后的tm结构体（表示本地时间）
     /// @note 使用std::localtime进行转换，结果受系统时区设置影响
+// 线程安全的 localtime 替代方案
     inline std::tm to_tm(const std::chrono::system_clock::time_point& tp) {
         std::time_t t = std::chrono::system_clock::to_time_t(tp);
-        std::tm tm = *std::localtime(&t);
-        return tm;
+
+        #ifdef _MSC_VER  // Microsoft Visual C++
+        // Windows 平台使用 localtime_s
+        std::tm result = {};
+        localtime_s(&result, &t);
+        return result;
+        #else  // POSIX 平台
+        // 使用 localtime_r（线程安全版本）
+        std::tm result = {};
+        localtime_r(&t, &result);
+        return result;
+        #endif
     }
 
     // 工具函数：将std::tm转换为std::chrono时间点

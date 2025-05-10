@@ -1,4 +1,5 @@
 #pragma once
+
 #include <unordered_map>
 #include <queue>
 #include <mutex>
@@ -7,8 +8,7 @@
 #include <list>
 #include <atomic>
 #include <functional>
-#include <optional>
-#include <condition_variable>
+#include <memory>
 #include <shared_mutex>
 
 /**
@@ -26,8 +26,8 @@ private:
         TState currentState;                      // 当前状态
         std::list<std::tuple<TState, std::chrono::system_clock::time_point, std::string>> history; // 状态变更历史
         std::chrono::system_clock::time_point lastUpdated; // 最后更新时间
-        std::optional<std::chrono::milliseconds> timeout; // 状态超时时间
-        std::optional<TState> fallbackState;     // 超时后的回退状态
+        std::unique_ptr<std::chrono::milliseconds> timeout; // 状态超时时间
+        std::unique_ptr<TState> fallbackState;     // 超时后的回退状态
     };
 
     /**
@@ -51,7 +51,7 @@ private:
         TState fromState;                      // 源状态
         TState toState;                        // 目标状态
         bool success;                          // 转换是否成功
-        std::optional<std::string> error;      // 错误信息（如果有）
+        std::string error;      // 错误信息（如果有）
     };
 
     // 核心数据结构
@@ -72,9 +72,9 @@ private:
 
 public:
     // 状态转换事件处理函数类型定义
-    using TransitionEventHandler = std::function<void(const TKey&, const TState&, const TState&)>;
+    typedef std::function<void(const TKey&, const TState&, const TState&)> TransitionEventHandler;
     // 状态转换失败处理函数类型定义
-    using TransitionFailedHandler = std::function<void(const TKey&, const TState&, const TState&, const std::exception&)>;
+    typedef std::function<void(const TKey&, const TState&, const TState&, const std::exception&)> TransitionFailedHandler;
 
     /**
      * 构造函数，初始化超时扫描线程
@@ -99,11 +99,11 @@ public:
      * @param initialState 初始状态
      */
     void InitializeState(const TKey& key, const TState& initialState) {
-        std::lock_guard lock(GetKeyLock(key));
-        _states.try_emplace(key, StateContext{
-            .currentState = initialState,
-            .lastUpdated = std::chrono::system_clock::now()
-            });
+        std::lock_guard<std::mutex> lock(GetKeyLock(key));
+        StateContext context;
+        context.currentState = initialState;
+        context.lastUpdated = std::chrono::system_clock::now();
+        _states[key] = context;
     }
 
     /**
@@ -133,7 +133,7 @@ public:
 
         try {
             // 先获取共享锁检查状态
-            std::shared_lock lock(GetKeyLock(key));
+            std::shared_lock<std::shared_mutex> lock(GetKeyLock(key));
             auto it = _states.find(key);
             if (it == _states.end()) return false;
 
@@ -141,8 +141,8 @@ public:
             const TState originalState = context.currentState;
 
             // 检查是否为合法转换
-            if (!_transitions.contains(originalState) ||
-                !_transitions[originalState].contains(toState)) {
+            if (!_transitions.count(originalState) ||
+                _transitions[originalState].count(toState) == 0) {
                 return false;
             }
 
@@ -152,43 +152,38 @@ public:
             if (_onBeforeTransition) _onBeforeTransition(key, originalState, toState);
 
             // 执行转换动作，捕获可能的异常
-            std::optional<std::exception> actionError;
             try {
                 transitionAction(key, originalState, toState);
             }
             catch (const std::exception& ex) {
-                actionError = ex;
+                _failedTransitions++;
+                RecordAudit(key, originalState, toState, false, ex.what());
+                if (_onTransitionFailed) _onTransitionFailed(key, originalState, toState, ex);
+                return false;
             }
 
             // 双重检查锁定，获取排他锁进行状态更新
-            {
-                std::unique_lock ulock(GetKeyLock(key));
-                // 检查状态是否被其他线程修改
-                if (it->second.currentState != originalState) return false;
+            std::unique_lock<std::shared_mutex> ulock(GetKeyLock(key));
+            // 检查状态是否被其他线程修改
+            if (it->second.currentState != originalState) return false;
 
-                // 如果转换动作抛出异常，记录错误并终止转换
-                if (actionError) {
-                    throw std::runtime_error("Transition failed", *actionError);
-                }
+            // 记录状态变更历史
+            context.history.emplace_back(toState, std::chrono::system_clock::now(), reason);
+            // 更新当前状态
+            context.currentState = toState;
+            // 更新最后更新时间
+            context.lastUpdated = std::chrono::system_clock::now();
 
-                // 记录状态变更历史
-                RecordHistory(context, toState, reason);
-                // 更新当前状态
-                context.currentState = toState;
-                // 更新最后更新时间
-                context.lastUpdated = std::chrono::system_clock::now();
-
-                // 如果设置了超时，安排超时任务
-                if (context.timeout.has_value()) {
-                    ScheduleTimeout(key, context.timeout.value());
-                }
-
-                // 记录审计日志
-                RecordAudit(key, originalState, toState, true, {});
-
-                // 执行后置回调（如果有）
-                if (_onAfterTransition) _onAfterTransition(key, originalState, toState);
+            // 如果设置了超时，安排超时任务
+            if (context.timeout) {
+                ScheduleTimeout(key, *context.timeout);
             }
+
+            // 记录审计日志
+            RecordAudit(key, originalState, toState, true, "");
+
+            // 执行后置回调（如果有）
+            if (_onAfterTransition) _onAfterTransition(key, originalState, toState);
 
             _successfulTransitions++;
             return true;
@@ -208,12 +203,12 @@ public:
      * @param fallbackState 超时后自动转换的回退状态
      */
     void SetTimeout(const TKey& key, std::chrono::milliseconds timeout, const TState& fallbackState) {
-        std::unique_lock lock(GetKeyLock(key));
+        std::unique_lock<std::shared_mutex> lock(GetKeyLock(key));
         auto it = _states.find(key);
         if (it == _states.end()) throw std::out_of_range("Key not found");
 
-        it->second.timeout = timeout;
-        it->second.fallbackState = fallbackState;
+        it->second.timeout.reset(new std::chrono::milliseconds(timeout));
+        it->second.fallbackState.reset(new TState(fallbackState));
         ScheduleTimeout(key, timeout);
     }
 
@@ -223,8 +218,9 @@ public:
      * @return 状态变更历史列表
      */
     std::list<std::tuple<TState, std::chrono::system_clock::time_point, std::string>> GetStateHistory(const TKey& key) {
-        std::shared_lock lock(GetKeyLock(key));
-        if (auto it = _states.find(key); it != _states.end()) {
+        std::shared_lock<std::shared_mutex> lock(GetKeyLock(key));
+        auto it = _states.find(key);
+        if (it != _states.end()) {
             return it->second.history;
         }
         return {};
@@ -235,8 +231,13 @@ public:
      * @return 审计日志列表
      */
     std::list<AuditLogEntry> GetAuditLogs() {
-        std::lock_guard lock(_auditLogMutex);
-        return { _auditLog.begin(), _auditLog.end() };
+        std::lock_guard<std::mutex> lock(_auditLogMutex);
+        std::list<AuditLogEntry> logs;
+        while (!_auditLog.empty()) {
+            logs.push_back(_auditLog.front());
+            _auditLog.pop();
+        }
+        return logs;
     }
 
     /**
@@ -246,8 +247,9 @@ public:
      * @return 是否成功获取状态
      */
     bool TryGetCurrentState(const TKey& key, TState& state) {
-        std::shared_lock lock(GetKeyLock(key));
-        if (auto it = _states.find(key); it != _states.end()) {
+        std::shared_lock<std::shared_mutex> lock(GetKeyLock(key));
+        auto it = _states.find(key);
+        if (it != _states.end()) {
             state = it->second.currentState;
             return true;
         }
@@ -292,7 +294,7 @@ private:
      * @param duration 超时时间
      */
     void ScheduleTimeout(const TKey& key, std::chrono::milliseconds duration) {
-        std::lock_guard lock(_timeoutQueueMutex);
+        std::lock_guard<std::mutex> lock(_timeoutQueueMutex);
         auto expireTime = std::chrono::system_clock::now() + duration;
         _timeoutQueue.emplace(TimeoutTask{ key, expireTime });
     }
@@ -308,7 +310,7 @@ private:
             // 收集所有已过期的键
             std::vector<TKey> expiredKeys;
             {
-                std::lock_guard lock(_timeoutQueueMutex);
+                std::lock_guard<std::mutex> lock(_timeoutQueueMutex);
                 while (!_timeoutQueue.empty() && _timeoutQueue.top().expireTime <= now) {
                     expiredKeys.push_back(_timeoutQueue.top().key);
                     _timeoutQueue.pop();
@@ -327,20 +329,20 @@ private:
      * @param key 状态机键
      */
     void HandleTimeout(const TKey& key) {
-        std::unique_lock lock(GetKeyLock(key));
+        std::unique_lock<std::shared_mutex> lock(GetKeyLock(key));
         auto it = _states.find(key);
         if (it == _states.end()) return;
 
         StateContext& context = it->second;
         // 检查是否设置了超时和回退状态
-        if (!context.timeout.has_value() || !context.fallbackState.has_value()) return;
+        if (!context.timeout || !context.fallbackState) return;
 
         // 检查是否真的超时
-        auto elapsed = std::chrono::system_clock::now() - context.lastUpdated;
-        if (elapsed < context.timeout.value()) return;
+        auto elapsed = std::chrono::system_clock::now() + *context.timeout - context.lastUpdated;
+        if (elapsed < *context.timeout) return;
 
         // 执行超时状态转换
-        Transition(key, context.fallbackState.value(),
+        Transition(key, *context.fallbackState,
             [](auto&&...) {},
             "State timeout");
     }
@@ -354,19 +356,19 @@ private:
      * @param error 错误信息（如果有）
      */
     void RecordAudit(const TKey& key, const TState& from, const TState& to,
-        bool success, const std::optional<std::string>& error) {
-        std::lock_guard lock(_auditLogMutex);
-        _auditLog.push({
-            std::chrono::system_clock::now(),
-            key,
-            from,
-            to,
-            success,
-            error
-            });
+        bool success, const std::string& error) {
+        std::lock_guard<std::mutex> lock(_auditLogMutex);
+        AuditLogEntry entry;
+        entry.timestamp = std::chrono::system_clock::now();
+        entry.key = key;
+        entry.fromState = from;
+        entry.toState = to;
+        entry.success = success;
+        entry.error = error;
+        _auditLog.push(entry);
 
         // 限制审计日志数量，防止内存溢出
-        if (_auditLog.size() > 10000) {
+        while (_auditLog.size() > 10000) {
             _auditLog.pop();
         }
     }

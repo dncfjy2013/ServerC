@@ -2,8 +2,8 @@
 #include <memory>
 #include <atomic>
 #include <stdexcept>
-#include "Common/LogLevel.h"
-#include "Common/LoggerConfig.h"
+#include "Common/LogLevel.hpp"
+#include "Common/LoggerConfig.hpp"
 
 
 // 抽象日志记录器类

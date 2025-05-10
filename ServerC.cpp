@@ -8,10 +8,158 @@
 #include "Common/Extensions/DoubleExtensions.hpp"
 #include "Common/Extensions/FloatExtensions.hpp"
 #include "Common/Extensions/IntExtensions.hpp"
-#include "Common/Extensions/StringExtensions.hpp"
+//#include "Common/Extensions/StringExtensions.hpp"
 #include "Common/Helpers/DateTimeHelper.hpp"
 #include "Utils/StateMachine.hpp"
-enum class MachineState { Idle, Running, Paused };
+
+// 定义状态类型和键类型
+using State = std::string;
+using Key = std::string;
+
+// 前置状态转换回调函数
+void beforeTransition(const Key& key, const State& from, const State& to) {
+    std::cout << "Before transition for key: " << key
+        << ", from: " << from << ", to: " << to << std::endl;
+}
+
+// 后置状态转换回调函数
+void afterTransition(const Key& key, const State& from, const State& to) {
+    std::cout << "After transition for key: " << key
+        << ", from: " << from << ", to: " << to << std::endl;
+}
+
+// 状态转换失败回调函数
+void transitionFailed(const Key& key, const State& from, const State& to, const std::exception& ex) {
+    std::cout << "Transition failed for key: " << key
+        << ", from: " << from << ", to: " << to
+        << ", error: " << ex.what() << std::endl;
+}
+
+// 将时间点转换为字符串以便输出
+std::string timePointToString(const std::chrono::system_clock::time_point& tp) {
+    std::time_t t = std::chrono::system_clock::to_time_t(tp);
+    char buffer[64];
+    std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", std::localtime(&t));
+    return std::string(buffer);
+}
+
+int statetest() {
+    // 创建状态机实例
+    StateMachine<Key, State> stateMachine;
+
+    // 设置回调函数
+    stateMachine._onBeforeTransition = beforeTransition;
+    stateMachine._onAfterTransition = afterTransition;
+    stateMachine._onTransitionFailed = transitionFailed;
+
+    // 定义状态机键和初始状态
+    Key key = "MyStateMachine";
+    State initialState = "Idle";
+
+    // 初始化状态机
+    stateMachine.InitializeState(key, initialState);
+    std::cout << "State machine initialized with key: " << key
+        << ", initial state: " << initialState << std::endl;
+
+    // 添加合法的状态转换规则
+    stateMachine.AddTransition("Idle", "Processing");
+    stateMachine.AddTransition("Processing", "Completed");
+    stateMachine.AddTransition("Processing", "Failed");
+    stateMachine.AddTransition("Completed", "Idle");
+    stateMachine.AddTransition("Failed", "Idle");
+
+    // 定义状态转换动作
+    auto processingAction = [](const Key& k, const State& from, const State& to) {
+        std::cout << "Performing action for transition: " << from << " -> " << to
+            << " (Key: " << k << ")" << std::endl;
+        // 模拟处理过程
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        };
+
+    // 从 Idle 转换到 Processing
+    bool success = stateMachine.Transition(
+        key, "Processing", processingAction, "User requested processing");
+
+    if (success) {
+        std::cout << "Successfully transitioned to Processing state" << std::endl;
+    }
+    else {
+        std::cout << "Failed to transition to Processing state" << std::endl;
+    }
+
+    // 设置超时（如果在 3 秒内没有进一步操作，自动回退到 Idle）
+    stateMachine.SetTimeout(key, std::chrono::seconds(3), "Idle");
+    std::cout << "Timeout set for Processing state: 3 seconds" << std::endl;
+
+    // 模拟等待超时
+    std::cout << "Waiting for timeout..." << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(4));
+
+    // 尝试从 Processing 转换到 Completed（应该失败，因为已超时回退到 Idle）
+    success = stateMachine.Transition(
+        key, "Completed", processingAction, "Attempting to complete processing");
+
+    if (success) {
+        std::cout << "Successfully transitioned to Completed state" << std::endl;
+    }
+    else {
+        std::cout << "Failed to transition to Completed state" << std::endl;
+    }
+
+    // 再次从 Idle 转换到 Processing
+    success = stateMachine.Transition(
+        key, "Processing", processingAction, "Retry processing");
+
+    if (success) {
+        std::cout << "Successfully transitioned to Processing state again" << std::endl;
+
+        // 这次不等待超时，直接完成处理
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        success = stateMachine.Transition(
+            key, "Completed", processingAction, "Processing finished");
+
+        if (success) {
+            std::cout << "Successfully transitioned to Completed state" << std::endl;
+
+            // 回到初始状态
+            success = stateMachine.Transition(
+                key, "Idle", [](auto, auto, auto) {}, "Return to idle");
+
+            if (success) {
+                std::cout << "Successfully transitioned back to Idle state" << std::endl;
+            }
+        }
+    }
+
+    // 获取状态变更历史并打印
+    auto history = stateMachine.GetStateHistory(key);
+    std::cout << "\nState History for key " << key << ":\n";
+    for (const auto& entry : history) {
+        const State& state = std::get<0>(entry);
+        const std::chrono::system_clock::time_point& timestamp = std::get<1>(entry);
+        const std::string& reason = std::get<2>(entry);
+
+        std::cout << "- State: " << state
+            << ", Time: " << timePointToString(timestamp)
+            << ", Reason: " << reason << std::endl;
+    }
+
+    // 获取审计日志并打印
+    auto auditLogs = stateMachine.GetAuditLogs();
+    std::cout << "\nAudit Logs:\n";
+    for (const auto& log : auditLogs) {
+        std::cout << "- Time: " << timePointToString(log.timestamp)
+            << ", Key: " << log.key
+            << ", From: " << log.fromState
+            << ", To: " << log.toState
+            << ", Success: " << (log.success ? "Yes" : "No")
+            << ", Error: " << (log.error.empty() ? "None" : log.error) << std::endl;
+    }
+
+    return 0;
+}
+
 int main()
 {
     std::cout << "Hello World!\n" << ErrorCode::AccountLocked;
@@ -106,26 +254,12 @@ int main()
     std::cout << "First day of quarter: "
         << DateTimeUtils::ToCustomFormat(firstDayOfQuarter, "%Y-%m-%d") << "\n";
 
-    StateMachine<int, MachineState> sm;
-
-    sm.AddTransition(MachineState::Idle, MachineState::Running);
-    sm.AddTransition(MachineState::Running, MachineState::Paused);
-
-    sm.InitializeState(1, MachineState::Idle);
-
-    sm._onBeforeTransition = [](auto key, auto from, auto to) {
-        std::cout << "Transitioning " << key << " from "
-            << static_cast<int>(from) << " to "
-            << static_cast<int>(to) << std::endl;
-        };
-
-    sm.Transition(1, MachineState::Running, [](auto...) {
-        // 执行实际转换操作
-        });
-
+    int a = statetest();
+    
+    int b;
+    std::cin >> b;
     return 0;
 }
-
 // 运行程序: Ctrl + F5 或调试 >“开始执行(不调试)”菜单
 // 调试程序: F5 或调试 >“开始调试”菜单
 

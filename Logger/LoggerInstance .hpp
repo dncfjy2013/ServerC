@@ -19,6 +19,7 @@
 #include <memory>
 #include <ctime>
 #include "Common/LogLevel.hpp"
+#include "../Common/Helpers/DateTimeHelper.hpp"
 
 
 // 日志记录器实例类
@@ -106,9 +107,8 @@ private:
     }
 
     std::string FormatMessage(const LogMessage& message, const std::string& target) {
-        auto time = std::chrono::system_clock::to_time_t(message.getTimestamp());
         char buffer[64];
-        std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%m:%S.%f", std::localtime(&time));
+        std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%m:%S.%f", &DateTimeUtils::to_tm(message.getTimestamp()));
 
         return std::string(buffer) + " [" + GetLogLevelString(message.getLevel()) + "] [Thread: " +
             threadIdToStrByHash(message.getThreadId()) + "/" + message.getThreadName() + "] " + message.getMessage();
