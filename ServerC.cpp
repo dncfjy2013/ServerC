@@ -2,15 +2,15 @@
 //
 
 #include <iostream>
-#include "Common/Enums/ErrorCode.h"
-#include "Common/Exceptions/ApiException.h"
-#include "Common/Extensions/CharExtensions.h"
-#include "Common/Extensions/DoubleExtensions.h"
-#include "Common/Extensions/FloatExtensions.h"
-#include "Common/Extensions/IntExtensions.h"
-#include "Common/Extensions/StringExtensions.h"
-#include "Common/Helpers/DateTimeHelper.h"
-#include "Utils/StateMachine.h"
+#include "Common/Enums/ErrorCode.hpp"
+#include "Common/Exceptions/ApiException.hpp"
+#include "Common/Extensions/CharExtensions.hpp"
+#include "Common/Extensions/DoubleExtensions.hpp"
+#include "Common/Extensions/FloatExtensions.hpp"
+#include "Common/Extensions/IntExtensions.hpp"
+#include "Common/Extensions/StringExtensions.hpp"
+#include "Common/Helpers/DateTimeHelper.hpp"
+#include "Utils/StateMachine.hpp"
 enum class MachineState { Idle, Running, Paused };
 int main()
 {
@@ -70,24 +70,24 @@ int main()
     std::cout << "\nRoman(1999): " << IntUtils::ToRomanNumeral(1999);  // MCMXCIX
     std::cout << "\nBinary(-1): " << IntUtils::ToBinary(-1);           // 11111111...（32位全1）
 
-    // 空值檢查
-    std::cout << std::boolalpha;
-    std::cout << "IsNullOrEmpty: " << StringUtils::IsNullOrEmpty("") << "\n";      // true
+    //// 空值檢查
+    //std::cout << std::boolalpha;
+    //std::cout << "IsNullOrEmpty: " << StringUtils::IsNullOrEmpty("") << "\n";      // true
 
-    // 格式轉換
-    std::cout << "CamelCase: " << StringUtils::ToCamelCase("helloWorld") << "\n";   // helloWorld
+    //// 格式轉換
+    //std::cout << "CamelCase: " << StringUtils::ToCamelCase("helloWorld") << "\n";   // helloWorld
 
-    // 安全處理
-    std::cout << "MD5: " << StringUtils::ToMD5("password") << "\n";                 // 5f4dcc3b5aa765d61d8327deb882cf99
+    //// 安全處理
+    //std::cout << "MD5: " << StringUtils::ToMD5("password") << "\n";                 // 5f4dcc3b5aa765d61d8327deb882cf99
 
-    // 驗證方法
-    std::cout << "ValidEmail: " << StringUtils::IsValidEmail("test@example.com") << "\n"; // true
+    //// 驗證方法
+    //std::cout << "ValidEmail: " << StringUtils::IsValidEmail("test@example.com") << "\n"; // true
 
-    // 字符串處理
-    std::cout << "RandomString: " << StringUtils::RandomString(10) << "\n";          // 隨機字符串
+    //// 字符串處理
+    //std::cout << "RandomString: " << StringUtils::RandomString(10) << "\n";          // 隨機字符串
 
-    // 編碼轉換
-    std::cout << "Base64: " << StringUtils::ToBase64("test") << "\n";                // dGVzdA==
+    //// 編碼轉換
+    //std::cout << "Base64: " << StringUtils::ToBase64("test") << "\n";                // dGVzdA==
 
     // 創建測試時間點
     auto now = std::chrono::system_clock::now();
