@@ -1,0 +1,9 @@
+{
+  "name": "ServerC",
+  "version": "1.0.0",
+  "dependencies": [
+    "fmt",
+    "boost-asio",
+    "openssl"
+  ]
+}
